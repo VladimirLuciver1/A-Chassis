@@ -1,52 +1,110 @@
+export type WeldTypes = "Weld" | "Motor" | "Snap"
+export type WeldObject = {
+	Part0: BasePart,
+	Part1: BasePart,
+	C0: CFrame,
+	C1: CFrame,
+	Parent: Instance,
+	Name: string?,
+	MaxVelocity: number?
+}
+
+export type BasePart = {
+	CFrame: CFrame,
+	Parent: Instance?
+} & Instance
+
+export type CarConfig = {
+	wheelVelocity: number,
+	seatOffset: Vector3,
+	seatRotation: Vector3,
+	seatTilt: number
+}
+
+local DEFAULT_CONFIG: CarConfig = {
+	wheelVelocity = 0.5,
+	seatOffset = Vector3.new(0, -0.5, 0),
+	seatRotation = Vector3.new(-(math.pi/2), 0, 0),
+	seatTilt = math.rad(13)
+}
+
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+
+local function createCFrameFromConfig(config: CarConfig): CFrame
+	return CFrame.new(config.seatOffset) * 
+		CFrame.fromEulerAnglesXYZ(config.seatRotation.X, config.seatRotation.Y, config.seatRotation.Z) * 
+		CFrame.Angles(config.seatTilt, 0, 0)
+end
+
 local MiscWeld = {}
+MiscWeld.__index = MiscWeld
 
-function MakeWeld(x,y,type,s) 
-	if type==nil then type="Weld" end
-	local W=Instance.new(type)
-	W.Part0=x W.Part1=y 
-	W.C0=x.CFrame:inverse()*x.CFrame 
-	W.C1=y.CFrame:inverse()*x.CFrame 
-	W.Parent=x 
-	if type=="Motor" and s~=nil then 
-		W.MaxVelocity=s 
-	end 
-	return W	
-end
-function ModelWeld(a,b) 
-	if a:IsA("BasePart") then 
-		MakeWeld(b,a,"Weld") 
-	elseif a:IsA("Model") then 
-		for i,v in pairs(a:GetChildren()) do 
-			ModelWeld(v,b) 
-		end 
-	end 
-end
+local function _createWeld(part0: BasePart, part1: BasePart, weldType: WeldTypes, maxVelocity: number?): WeldObject
+	assert(part0, "Part0 must not be nil")
+	assert(part1, "Part1 must not be nil")
 
-car = script.Parent.Parent.Parent
-misc = car:WaitForChild("Misc")
+	local weld = Instance.new(weldType)
+	weld.Part0 = part0
+	weld.Part1 = part1
 
----------------------------
---[[
-	--Main anchor point is the DriveSeat <car.DriveSeat>	
-	
-	Usage:
-		MakeWeld(Part1,Part2,WeldType*,MotorVelocity**) *default is "Weld"  **Applies to Motor welds only
-		ModelWeld(Model,MainPart)
-	Example:
-		MakeWeld(car.DriveSeat,misc.PassengerSeat)
-		MakeWeld(car.DriveSeat,misc.SteeringWheel,"Motor",.2)
-		ModelWeld(car.DriveSeat,misc.Door)
-]]
+	local inverseCFrame = part0.CFrame:Inverse()
+	weld.C0 = inverseCFrame * part0.CFrame
+	weld.C1 = inverseCFrame * part1.CFrame
 
---Weld stuff here
-MakeWeld(car.Misc.Wheel.A,car.DriveSeat,"Motor",.5).Name="W"
-ModelWeld(car.Misc.Wheel.Parts,car.Misc.Wheel.A)
+	weld.Parent = part0
 
-car.DriveSeat.ChildAdded:connect(function(child)
-	if child.Name=="SeatWeld" and child:IsA("Weld") and game.Players:GetPlayerFromCharacter(child.Part1.Parent)~=nil then
-		child.C0=CFrame.new(0,-.5,0)*CFrame.fromEulerAnglesXYZ(-(math.pi/2),0,0)*CFrame.Angles(math.rad(13),0,0)
+	if weldType == "Motor" and maxVelocity then
+		weld.MaxVelocity = maxVelocity
 	end
-end)
 
----------------------------
+	return weld
+end
+
+local function _processModelWeld(model: Instance, basePart: BasePart): ()
+	if model:IsA("BasePart") then
+		_createWeld(basePart, model, "Weld")
+	elseif model:IsA("Model") then
+		for _, child in ipairs(model:GetChildren()) do
+			_processModelWeld(child, basePart)
+		end
+	end
+end
+
+function MiscWeld.setupCar(car: Model, config: CarConfig?)
+	local finalConfig: CarConfig = if config
+		then table.clone(config)
+		else table.clone(DEFAULT_CONFIG)
+
+	local misc = car.Misc
+	local wheel = misc.Wheel
+	local driveSeat = car.DriveSeat
+
+	local wheelWeld = _createWeld(wheel.A, driveSeat, "Motor", finalConfig.wheelVelocity)
+	wheelWeld.Name = "W"
+
+	_processModelWeld(wheel.Parts, wheel.A)
+
+	local seatCFrame = createCFrameFromConfig(finalConfig)
+
+	local connection
+	connection = driveSeat.ChildAdded:Connect(function(child)
+		if child.Name == "SeatWeld" and child:IsA("Weld") then
+			local character = child.Part1.Parent
+			if Players:GetPlayerFromCharacter(character) then
+				child.C0 = seatCFrame
+				connection:Disconnect()
+			end
+		end
+	end)
+
+	car.Destroying:Connect(function()
+		if connection then
+			connection:Disconnect()
+		end
+	end)
+
+	return wheelWeld
+end
+
 return MiscWeld
