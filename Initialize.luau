@@ -1,13 +1,12 @@
-function MakeWeld(x, y, type, s) 
-	type = type or "Weld"
-	local W = Instance.new(type, x) 
-	W.Part0 = x 
-	W.Part1 = y 
-	local xCFrame = x.CFrame
-	local xCFrameInv = xCFrame:inverse()
-	W.C0 = xCFrameInv * xCFrame 
-	W.C1 = y.CFrame:inverse() * xCFrame 
-	if type == "Motor" and s then W.MaxVelocity = s end 
+function MakeWeld(x,y,type,s) 
+	if type==nil then type="Weld" end
+	local W=Instance.new(type,x) 
+	W.Part0=x W.Part1=y 
+	W.C0=x.CFrame:inverse()*x.CFrame 
+	W.C1=y.CFrame:inverse()*x.CFrame 
+	if type=="Motor" and s~=nil then 
+		W.MaxVelocity=s 
+	end 
 	return W	
 end
 
